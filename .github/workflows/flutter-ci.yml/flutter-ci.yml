@@ -35,19 +35,19 @@ jobs:
           echo "dir=$(dirname $P)" >> $GITHUB_OUTPUT
           echo "✅ Found: $P"
 
-      - name: Verify lib/ exists and has main.dart
+      - name: Verify lib and files
         run: |
           PROJECT_DIR="${{ steps.find.outputs.dir }}"
           echo "=== lib/ structure ==="
           find "$PROJECT_DIR/lib" -type f -name "*.dart" | head -20
           echo "=== main.dart ==="
-          cat "$PROJECT_DIR/lib/main.dart" | head -40
+          cat "$PROJECT_DIR/lib/main.dart" | head -40 || echo "⚠️ no main.dart"
           echo "=== theme/app_theme.dart ==="
-          cat "$PROJECT_DIR/lib/theme/app_theme.dart" | head -20 || echo "⚠️ not found"
+          cat "$PROJECT_DIR/lib/theme/app_theme.dart" 2>/dev/null | head -20 || echo "⚠️ not found"
           echo "=== widgets/buddy_logo.dart ==="
-          cat "$PROJECT_DIR/lib/widgets/buddy_logo.dart" | head -20 || echo "⚠️ not found"
+          cat "$PROJECT_DIR/lib/widgets/buddy_logo.dart" 2>/dev/null | head -20 || echo "⚠️ not found"
           echo "=== screens/entry_screen.dart ==="
-          cat "$PROJECT_DIR/lib/screens/entry_screen.dart" | head -20 || echo "⚠️ not found"
+          cat "$PROJECT_DIR/lib/screens/entry_screen.dart" 2>/dev/null | head -20 || echo "⚠️ not found"
 
       - uses: actions/setup-java@v4
         with:
@@ -59,11 +59,11 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Remove workmanager (incompatible)
+      - name: Remove workmanager
         working-directory: ${{ steps.find.outputs.dir }}
         run: |
           sed -i '/workmanager/d' pubspec.yaml || true
-          echo "=== pubspec.yaml (first 40 lines) ==="
+          echo "=== pubspec.yaml ==="
           cat pubspec.yaml | head -40
 
       - name: pub get
@@ -75,7 +75,7 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
         continue-on-error: true
 
-      - name: Remove old android (if exists)
+      - name: Remove old android
         working-directory: ${{ steps.find.outputs.dir }}
         run: rm -rf android
 
