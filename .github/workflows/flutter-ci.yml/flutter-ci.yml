@@ -1,0 +1,110 @@
+name: Flutter Build v2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract ZIP
+        run: |
+          mkdir -p extracted
+          for f in *.zip; do
+            if [ -f "$f" ]; then
+              echo "Extracting: $f"
+              unzip -o "$f" -d extracted/ || true
+            fi
+          done
+          echo "=== Extracted structure ==="
+          find extracted -maxdepth 2 -type d | head -20
+
+      - name: Find Flutter project
+        id: find
+        run: |
+          P=$(find extracted -name "pubspec.yaml" | head -1)
+          if [ -z "$P" ]; then
+            echo "❌ No pubspec.yaml found"
+            exit 1
+          fi
+          echo "dir=$(dirname $P)" >> $GITHUB_OUTPUT
+          echo "✅ Found: $P"
+
+      - name: Verify lib/ exists and has main.dart
+        run: |
+          PROJECT_DIR="${{ steps.find.outputs.dir }}"
+          echo "=== lib/ structure ==="
+          find "$PROJECT_DIR/lib" -type f -name "*.dart" | head -20
+          echo "=== main.dart ==="
+          cat "$PROJECT_DIR/lib/main.dart" | head -40
+          echo "=== theme/app_theme.dart ==="
+          cat "$PROJECT_DIR/lib/theme/app_theme.dart" | head -20 || echo "⚠️ not found"
+          echo "=== widgets/buddy_logo.dart ==="
+          cat "$PROJECT_DIR/lib/widgets/buddy_logo.dart" | head -20 || echo "⚠️ not found"
+          echo "=== screens/entry_screen.dart ==="
+          cat "$PROJECT_DIR/lib/screens/entry_screen.dart" | head -20 || echo "⚠️ not found"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Remove workmanager (incompatible)
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: |
+          sed -i '/workmanager/d' pubspec.yaml || true
+          echo "=== pubspec.yaml (first 40 lines) ==="
+          cat pubspec.yaml | head -40
+
+      - name: pub get
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: flutter pub get
+
+      - name: build_runner
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: dart run build_runner build --delete-conflicting-outputs
+        continue-on-error: true
+
+      - name: Remove old android (if exists)
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: rm -rf android
+
+      - name: Regenerate android
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: |
+          flutter create --platforms=android --org com.buddysystem .
+          ls -la android/
+
+      - name: Fix build.gradle
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: |
+          FILE="android/app/build.gradle"
+          if [ -f "$FILE" ]; then
+            sed -i 's/namespace ".*"/namespace "com.buddysystem.buddy_system"/' "$FILE" || true
+            sed -i 's/applicationId ".*"/applicationId "com.buddysystem.buddy_system"/' "$FILE" || true
+            sed -i 's/minSdkVersion .*/minSdkVersion 23/' "$FILE" || true
+            sed -i 's/minSdk .*/minSdk 23/' "$FILE" || true
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/' "$FILE" || true
+            sed -i 's/compileSdk .*/compileSdk 34/' "$FILE" || true
+          fi
+
+      - name: Build APK
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: buddy-system-apk
+          path: ${{ steps.find.outputs.dir }}/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
