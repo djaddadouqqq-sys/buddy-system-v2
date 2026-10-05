@@ -1,0 +1,61 @@
+name: Buddy Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify project structure
+        run: |
+          echo "=== Repository structure ==="
+          find . -maxdepth 3 -type f -name "*.dart" | head -20
+          echo "=== pubspec.yaml ==="
+          cat pubspec.yaml
+          echo "=== lib/ contents ==="
+          find lib -type f
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: pub get
+        run: flutter pub get
+
+      - name: Regenerate android
+        run: |
+          flutter create --platforms=android --org com.buddysystem --project-name buddy_system .
+
+      - name: Fix namespace
+        run: |
+          FILE="android/app/build.gradle"
+          if [ -f "$FILE" ]; then
+            sed -i 's/namespace ".*"/namespace "com.buddysystem.buddy_system"/' "$FILE" || true
+            sed -i 's/applicationId ".*"/applicationId "com.buddysystem.buddy_system"/' "$FILE" || true
+            sed -i 's/minSdkVersion .*/minSdkVersion 23/' "$FILE" || true
+            sed -i 's/minSdk .*/minSdk 23/' "$FILE" || true
+            sed -i 's/compileSdkVersion .*/compileSdkVersion 34/' "$FILE" || true
+            sed -i 's/compileSdk .*/compileSdk 34/' "$FILE" || true
+          fi
+
+      - name: Build APK
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: buddy-system-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
